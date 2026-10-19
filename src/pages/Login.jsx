@@ -1,15 +1,24 @@
+
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Cloud, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import {
+  Cloud,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+} from 'lucide-react';
 import { login } from '../services/auth';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [email, setEmail]       = useState('');
+
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd]   = useState(false);
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -21,12 +30,27 @@ export default function Login() {
     }
 
     setLoading(true);
+
     try {
-      await new Promise(r => setTimeout(r, 600)); // simulate network
-      login(email.trim(), password);
+      await login(email.trim(), password);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed. Please try again.');
+      const message = err?.message || '';
+
+      if (
+        message.toLowerCase().includes('confirm') ||
+        message.toLowerCase().includes('not confirmed')
+      ) {
+        setError(
+          'Please verify your email first. Complete registration using the verification code.'
+        );
+      } else {
+        setError(
+          message ||
+            'Login failed. Please check your credentials and try again.'
+        );
+      }
+    } finally {
       setLoading(false);
     }
   }
@@ -43,9 +67,15 @@ export default function Login() {
         </div>
 
         <h1 className="auth-card__title">Welcome back</h1>
-        <p className="auth-card__subtitle">Sign in to access your files</p>
+        <p className="auth-card__subtitle">
+          Sign in to access your files
+        </p>
 
-        <form className="auth-card__form" onSubmit={handleSubmit} noValidate>
+        <form
+          className="auth-card__form"
+          onSubmit={handleSubmit}
+          noValidate
+        >
           {/* Error */}
           {error && (
             <div className="alert alert--error">
@@ -56,21 +86,35 @@ export default function Login() {
 
           {/* Email */}
           <div className="form-group">
-            <label className="form-label" htmlFor="login-email">Email address</label>
+            <label
+              className="form-label"
+              htmlFor="login-email"
+            >
+              Email address
+            </label>
+
             <div style={{ position: 'relative' }}>
-              <span style={{
-                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-                color: 'var(--text-muted)', display: 'flex', pointerEvents: 'none',
-              }}>
+              <span
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  pointerEvents: 'none',
+                }}
+              >
                 <Mail size={15} />
               </span>
+
               <input
                 id="login-email"
                 type="email"
                 className="form-input"
                 placeholder="you@example.com"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 style={{ paddingLeft: 38 }}
                 autoComplete="email"
                 autoFocus
@@ -80,46 +124,88 @@ export default function Login() {
 
           {/* Password */}
           <div className="form-group">
-            <label className="form-label" htmlFor="login-password">Password</label>
+            <label
+              className="form-label"
+              htmlFor="login-password"
+            >
+              Password
+            </label>
+
             <div style={{ position: 'relative' }}>
-              <span style={{
-                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-                color: 'var(--text-muted)', display: 'flex', pointerEvents: 'none',
-              }}>
+              <span
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  pointerEvents: 'none',
+                }}
+              >
                 <Lock size={15} />
               </span>
+
               <input
                 id="login-password"
                 type={showPwd ? 'text' : 'password'}
                 className="form-input"
                 placeholder="••••••••"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                style={{ paddingLeft: 38, paddingRight: 40 }}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  paddingLeft: 38,
+                  paddingRight: 40,
+                }}
                 autoComplete="current-password"
               />
+
               <button
                 type="button"
                 style={{
-                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', color: 'var(--text-muted)',
-                  cursor: 'pointer', display: 'flex', padding: 0,
+                  position: 'absolute',
+                  right: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  padding: 0,
                 }}
-                onClick={() => setShowPwd(s => !s)}
-                tabIndex={-1}
+                onClick={() => setShowPwd((s) => !s)}
+                aria-label={
+                  showPwd ? 'Hide password' : 'Show password'
+                }
               >
-                {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                {showPwd ? (
+                  <EyeOff size={15} />
+                ) : (
+                  <Eye size={15} />
+                )}
               </button>
             </div>
           </div>
 
+          {/* Sign in */}
           <button
             type="submit"
             className="btn btn--primary btn--lg"
-            style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}
+            style={{
+              width: '100%',
+              justifyContent: 'center',
+              marginTop: 4,
+            }}
             disabled={loading}
           >
-            {loading ? <><span className="spinner" /> Signing in…</> : 'Sign in'}
+            {loading ? (
+              <>
+                <span className="spinner" /> Signing in…
+              </>
+            ) : (
+              'Sign in'
+            )}
           </button>
         </form>
 

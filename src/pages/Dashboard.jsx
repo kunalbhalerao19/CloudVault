@@ -1,94 +1,161 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, Files, Share2, HardDrive } from 'lucide-react';
 
-import Navbar      from '../components/Navbar';
-import Sidebar     from '../components/Sidebar';
-import FileTable   from '../components/FileTable';
+import Navbar from '../components/Navbar';
+import Sidebar from '../components/Sidebar';
+import FileTable from '../components/FileTable';
 import UploadModal from '../components/UploadModal';
-import ShareModal  from '../components/ShareModal';
+import ShareModal from '../components/ShareModal';
 
 import { getUser, logout } from '../services/auth';
-import { getFiles, uploadFile, deleteFile, shareFile, downloadFile } from '../services/api';
+import {
+  getFiles,
+  uploadFile,
+  deleteFile,
+  shareFile,
+  downloadFile,
+} from '../services/api';
 
-/* ─── Helpers ───────────────────────────────────────────────────── */
 function formatSize(bytes) {
-  if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
-  if (bytes >= 1048576)    return (bytes / 1048576).toFixed(1) + ' MB';
-  if (bytes >= 1024)       return (bytes / 1024).toFixed(0) + ' KB';
+  if (bytes >= 1073741824) {
+    return (bytes / 1073741824).toFixed(1) + ' GB';
+  }
+  if (bytes >= 1048576) {
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+  if (bytes >= 1024) {
+    return (bytes / 1024).toFixed(0) + ' KB';
+  }
   return bytes + ' B';
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const user = getUser();
 
-  const [files, setFiles]               = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [searchQuery, setSearchQuery]   = useState('');
-  const [activeTab, setActiveTab]       = useState('my-files');
+  const [user, setUser] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('my-files');
 
-  const [uploadOpen, setUploadOpen]     = useState(false);
-  const [shareOpen, setShareOpen]       = useState(false);
-  const [shareTarget, setShareTarget]   = useState(null); // { id, name }
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareTarget, setShareTarget] = useState(null);
 
-  /* Load files on mount */
+  // Load the authenticated Cognito user.
   useEffect(() => {
-    (async () => {
+    let active = true;
+
+    async function loadUser() {
+      try {
+        const currentUser = await getUser();
+
+        if (active) {
+          if (!currentUser) {
+            navigate('/login', { replace: true });
+            return;
+          }
+
+          setUser(currentUser);
+        }
+      } catch {
+        if (active) {
+          navigate('/login', { replace: true });
+        }
+      }
+    }
+
+    loadUser();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
+
+  // Load files.
+  useEffect(() => {
+    let active = true;
+
+    async function loadFiles() {
       try {
         const data = await getFiles();
-        setFiles(data);
+
+        if (active) {
+          setFiles(data);
+        }
+      } catch (err) {
+        console.error('Failed to load files:', err);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
-    })();
+    }
+
+    loadFiles();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  /* Logout */
-  function handleLogout() {
-    logout();
-    navigate('/login', { replace: true });
+  // Logout.
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Logout failed:', err);
+    } finally {
+      navigate('/login', { replace: true });
+    }
   }
 
-  /* Upload */
+  // Upload.
   const handleUpload = useCallback(async (file) => {
     const newFile = await uploadFile(file);
-    setFiles(prev => [newFile, ...prev]);
+    setFiles((prev) => [newFile, ...prev]);
   }, []);
 
-  /* Delete */
+  // Delete.
   async function handleDelete(fileId) {
     await deleteFile(fileId);
-    setFiles(prev => prev.filter(f => f.id !== fileId));
+    setFiles((prev) => prev.filter((file) => file.id !== fileId));
   }
 
-  /* Share — opens the modal */
+  // Open share modal.
   function handleShareOpen(file) {
     setShareTarget({ id: file.id, name: file.name });
     setShareOpen(true);
   }
 
-  /* Share — submits */
+  // Share file.
   async function handleShare(email) {
     if (!shareTarget) return;
+
     await shareFile(shareTarget.id, email);
-    setFiles(prev =>
-      prev.map(f =>
-        f.id === shareTarget.id
-          ? { ...f, shared: true, sharedWith: [...(f.sharedWith || []), email] }
-          : f
+
+    setFiles((prev) =>
+      prev.map((file) =>
+        file.id === shareTarget.id
+          ? {
+              ...file,
+              shared: true,
+              sharedWith: [...(file.sharedWith || []), email],
+            }
+          : file
       )
     );
   }
 
-  /* Download */
+  // Download.
   async function handleDownload(fileId, fileName) {
     await downloadFile(fileId, fileName);
   }
 
-  /* Derived stats */
-  const totalSize  = files.reduce((acc, f) => acc + f.size, 0);
-  const sharedCount = files.filter(f => f.shared).length;
+  const totalSize = files.reduce((total, file) => total + file.size, 0);
+  const sharedCount = files.filter((file) => file.shared).length;
 
   return (
     <div className="dashboard">
@@ -99,17 +166,22 @@ export default function Dashboard() {
         onLogout={handleLogout}
       />
 
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       <main className="dashboard__main">
-        {/* Header */}
         <div className="dashboard__header">
           <div>
             <h1 className="dashboard__title">My Files</h1>
             <p className="dashboard__subtitle">
-              {loading ? 'Loading…' : `${files.length} file${files.length !== 1 ? 's' : ''} stored`}
+              {loading
+                ? 'Loading…'
+                : `${files.length} file${files.length !== 1 ? 's' : ''} stored`}
             </p>
           </div>
+
           <button
             className="btn btn--primary"
             onClick={() => setUploadOpen(true)}
@@ -119,7 +191,7 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Stats */}
+        {/* Statistics */}
         <div className="stats-bar">
           <div className="stat-card">
             <div className="stat-card__icon stat-card__icon--blue">
@@ -154,13 +226,27 @@ export default function Dashboard() {
 
         {/* File table */}
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
-            <span className="spinner" style={{
-              width: 28, height: 28, borderWidth: 3,
-              borderColor: 'var(--border)', borderTopColor: 'var(--accent)',
-              display: 'inline-block',
-            }} />
-            <p style={{ marginTop: 16, fontSize: 14 }}>Loading your files…</p>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '60px 0',
+              color: 'var(--text-muted)',
+            }}
+          >
+            <span
+              className="spinner"
+              style={{
+                width: 28,
+                height: 28,
+                borderWidth: 3,
+                borderColor: 'var(--border)',
+                borderTopColor: 'var(--accent)',
+                display: 'inline-block',
+              }}
+            />
+            <p style={{ marginTop: 16, fontSize: 14 }}>
+              Loading your files…
+            </p>
           </div>
         ) : (
           <FileTable
@@ -182,7 +268,10 @@ export default function Dashboard() {
 
       <ShareModal
         isOpen={shareOpen}
-        onClose={() => { setShareOpen(false); setShareTarget(null); }}
+        onClose={() => {
+          setShareOpen(false);
+          setShareTarget(null);
+        }}
         onShare={handleShare}
         fileName={shareTarget?.name || ''}
       />

@@ -1,66 +1,81 @@
-const USER_KEY = 'cloudvault_user';
 
-/**
- * Simulates a login — accepts any non-empty email/password.
- * Stores user to localStorage and returns the user object.
- */
-export function login(email, password) {
-  if (!email || !password) {
-    throw new Error('Email and password are required.');
-  }
+import './amplifyConfig';
 
-  const user = {
-    id: 'usr_' + Math.random().toString(36).slice(2, 10),
-    name: email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    email,
-    createdAt: new Date().toISOString(),
-  };
+import {
+  signUp,
+  confirmSignUp,
+  signIn,
+  signOut,
+  getCurrentUser,
+} from 'aws-amplify/auth';
 
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  return user;
-}
-
-/**
- * Simulates registration.
- */
-export function register(name, email, password) {
+export async function register(name, email, password) {
   if (!name || !email || !password) {
     throw new Error('All fields are required.');
   }
 
-  const user = {
-    id: 'usr_' + Math.random().toString(36).slice(2, 10),
-    name,
-    email,
-    createdAt: new Date().toISOString(),
+  const result = await signUp({
+    username: email.trim().toLowerCase(),
+    password,
+    options: {
+      userAttributes: {
+        email: email.trim().toLowerCase(),
+        name: name.trim(),
+      },
+    },
+  });
+
+  return {
+    isSignUpComplete: result.isSignUpComplete,
+    nextStep: result.nextStep,
   };
-
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  return user;
 }
 
-/**
- * Clears the current session.
- */
-export function logout() {
-  localStorage.removeItem(USER_KEY);
+export async function confirmRegistration(email, code) {
+  return await confirmSignUp({
+    username: email.trim().toLowerCase(),
+    confirmationCode: code.trim(),
+  });
 }
 
-/**
- * Returns the current user or null.
- */
-export function getUser() {
+export async function login(email, password) {
+  const result = await signIn({
+    username: email.trim().toLowerCase(),
+    password,
+  });
+
+  if (!result.isSignedIn) {
+    throw new Error(
+      `Additional sign-in step required: ${result.nextStep.signInStep}`
+    );
+  }
+
+  return await getCurrentUser();
+}
+
+export async function logout() {
+  await signOut();
+}
+
+export async function getUser() {
   try {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const user = await getCurrentUser();
+
+    return {
+      id: user.userId,
+      name: user.username,
+      email: user.signInDetails?.loginId ?? user.username,
+    };
   } catch {
     return null;
   }
 }
 
-/**
- * Returns true if a user is currently logged in.
- */
-export function isAuthenticated() {
-  return Boolean(getUser());
+export async function isAuthenticated() {
+  try {
+    await getCurrentUser();
+    return true;
+  } catch {
+    return false;
+  }
 }
