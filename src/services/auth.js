@@ -9,6 +9,20 @@ import {
   getCurrentUser,
 } from 'aws-amplify/auth';
 
+
+import { fetchAuthSession } from 'aws-amplify/auth';
+
+export async function getAccessToken() {
+  const session = await fetchAuthSession();
+  const token = session.tokens?.accessToken;
+
+  if (!token) {
+    throw new Error('You must log in before uploading files.');
+  }
+
+  return token.toString();
+}
+
 export async function register(name, email, password) {
   if (!name || !email || !password) {
     throw new Error('All fields are required.');
