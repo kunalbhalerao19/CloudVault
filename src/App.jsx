@@ -1,3 +1,5 @@
+
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -5,7 +7,27 @@ import Dashboard from './pages/Dashboard';
 import { isAuthenticated } from './services/auth';
 
 function ProtectedRoute({ children }) {
-  return isAuthenticated() ? children : <Navigate to="/login" replace />;
+  const [authenticated, setAuthenticated] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+
+    isAuthenticated().then((result) => {
+      if (active) setAuthenticated(result);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (authenticated === null) {
+    return <p>Checking authentication...</p>;
+  }
+
+  return authenticated
+    ? children
+    : <Navigate to="/login" replace />;
 }
 
 export default function App() {
@@ -22,7 +44,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      {/* Catch-all */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

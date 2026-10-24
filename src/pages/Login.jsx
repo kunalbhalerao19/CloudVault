@@ -22,8 +22,8 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await new Promise(r => setTimeout(r, 600)); // simulate network
-      login(email.trim(), password);
+     
+   await login(email.trim(), password);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');

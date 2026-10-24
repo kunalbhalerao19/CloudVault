@@ -38,10 +38,18 @@ export default function Register() {
 
     setLoading(true);
     try {
-      await new Promise(r => setTimeout(r, 700));
-      register(name.trim(), email.trim(), password);
-      setSuccess(true);
-      setTimeout(() => navigate('/dashboard', { replace: true }), 1000);
+  
+      const result = await register(name.trim(), email.trim(), password);
+
+if (result.nextStep?.signUpStep === 'CONFIRM_SIGN_UP') {
+  setSuccess(true);
+  setError('Account created. Please confirm your email before signing in.');
+  return;
+}
+
+setSuccess(true);
+setError('');
+setTimeout(() => navigate('/login', { replace: true }), 1000);
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
       setLoading(false);
