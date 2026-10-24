@@ -1,283 +1,214 @@
 
 import { getAccessToken } from './auth';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  'https://05nxz2uqye.execute-api.ap-south-1.amazonaws.com'
+).replace(/\/+$/, '');
 
-/*
- * Temporary mock data for dashboard features that do not yet have
- * confirmed AWS backend endpoints.
- */
-let mockFiles = [
-  {
-    id: 'f1',
-    name: 'project-report.pdf',
-    type: 'pdf',
-    size: 2457600,
-    modified: '2026-10-10T09:30:00Z',
-    shared: true,
-    sharedWith: ['alice@example.com'],
-  },
-  {
-    id: 'f2',
-    name: 'photo-vacation.jpg',
-    type: 'image',
-    size: 4718592,
-    modified: '2026-10-08T14:20:00Z',
-    shared: false,
-    sharedWith: [],
-  },
-  {
-    id: 'f3',
-    name: 'team-meeting.mp4',
-    type: 'video',
-    size: 157286400,
-    modified: '2026-10-06T11:00:00Z',
-    shared: true,
-    sharedWith: ['bob@example.com', 'charlie@example.com'],
-  },
-  {
-    id: 'f4',
-    name: 'budget-2026.xlsx',
-    type: 'sheet',
-    size: 512000,
-    modified: '2026-10-05T16:45:00Z',
-    shared: false,
-    sharedWith: [],
-  },
-  {
-    id: 'f5',
-    name: 'presentation-q4.pptx',
-    type: 'doc',
-    size: 8388608,
-    modified: '2026-10-03T10:00:00Z',
-    shared: true,
-    sharedWith: ['diana@example.com'],
-  },
-  {
-    id: 'f6',
-    name: 'source-code-backup.zip',
-    type: 'zip',
-    size: 52428800,
-    modified: '2026-09-28T08:15:00Z',
-    shared: false,
-    sharedWith: [],
-  },
-  {
-    id: 'f7',
-    name: 'podcast-episode-42.mp3',
-    type: 'audio',
-    size: 35651584,
-    modified: '2026-09-25T19:00:00Z',
-    shared: false,
-    sharedWith: [],
-  },
-  {
-    id: 'f8',
-    name: 'design-mockup-v3.fig',
-    type: 'default',
-    size: 1048576,
-    modified: '2026-09-20T13:30:00Z',
-    shared: true,
-    sharedWith: ['eve@example.com'],
-  },
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+const ALLOWED_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'text/plain',
 ];
 
-function delay(ms = 400) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+async function apiRequest(path, options = {}) {
+  const token = await getAccessToken();
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...options.headers,
+    },
+  });
+
+  const text = await response.text();
+  let data = {};
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.message || data.error || `API request failed (${response.status})`
+    );
+  }
+
+  return data;
+}
+
+function getFileType(fileName, contentType = '') {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+
+  if (contentType === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (contentType.startsWith('image/')) return 'image';
+  if (contentType.startsWith('text/')) return 'doc';
+
+  const types = {
+    mp4: 'video',
+    mov: 'video',
+    xlsx: 'sheet',
+    xls: 'sheet',
+    csv: 'sheet',
+    ppt: 'doc',
+    pptx: 'doc',
+    doc: 'doc',
+    docx: 'doc',
+    zip: 'zip',
+    mp3: 'audio',
+    wav: 'audio',
+  };
+
+  return types[ext] || 'default';
+}
+
+function normalizeFile(file) {
+  return {
+    ...file,
+    id: file.fileId ?? file.id,
+    name: file.fileName ?? file.name,
+    type: file.type ?? getFileType(
+      file.fileName ?? file.name ?? '',
+      file.contentType ?? ''
+    ),
+    size: file.fileSize ?? file.size ?? 0,
+    modified:
+      file.updatedAt ??
+      file.createdAt ??
+      file.modified ??
+      new Date().toISOString(),
+    shared: file.shared ?? false,
+    sharedWith: file.sharedWith ?? [],
+  };
 }
 
 /**
- * Requests an authenticated presigned URL and uploads the file to S3.
+ * Upload to S3, then save metadata through the backend API.
  */
 export async function uploadFile(file) {
-  const allowedTypes = [
-    'application/pdf',
-    'image/jpeg',
-    'image/png',
-    'text/plain',
-  ];
+  if (!file) throw new Error('Please select a file.');
 
-  if (!file) {
-    throw new Error('Please select a file.');
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    throw new Error('Only PDF, JPEG, PNG, and text files are supported.');
   }
 
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error(
-      'Only PDF, JPEG, PNG, and plain text files are allowed.'
-    );
-  }
+  if (file.size <= 0) throw new Error('The file is empty.');
 
-  if (file.size === 0) {
-    throw new Error('Empty files cannot be uploaded.');
-  }
-
-  if (file.size > 10 * 1024 * 1024) {
+  if (file.size > MAX_FILE_SIZE) {
     throw new Error('File size must not exceed 10 MB.');
   }
 
-  if (!BASE_URL.startsWith('https://')) {
-    throw new Error(
-      'Configure VITE_API_BASE_URL in your .env file with the HTTPS API URL.'
-    );
-  }
+  const contentType = file.type || 'application/octet-stream';
 
-  // Get the signed-in user's access token.
-  const token = await getAccessToken();
-
-  // Ask the backend for a presigned S3 upload URL.
-  const response = await fetch(`${BASE_URL}/files/upload-url`, {
+  const uploadInfo = await apiRequest('/files/upload-url', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({
       fileName: file.name,
-      contentType: file.type,
+      contentType,
       fileSize: file.size,
     }),
   });
 
- if (!response.ok) {
-  throw new Error(
-    `Unable to request an upload URL (HTTP ${response.status}). Please try again.`
-  );
-}
+  const { uploadUrl, fileId, fileKey } = uploadInfo;
 
-  const result = await response.json();
-
-  // Expected backend response: uploadUrl, fileId, fileKey, expiresIn.
-  const uploadUrl = result.uploadUrl;
-
-  if (!uploadUrl) {
-    throw new Error(
-      'The API response has no uploadUrl. Check the backend response format.'
-    );
+  if (!uploadUrl || !fileId || !fileKey) {
+    throw new Error('The upload URL response is missing required fields.');
   }
 
-  if (!result.fileId || !result.fileKey) {
-    throw new Error(
-      'The API response is missing fileId or fileKey.'
-    );
-  }
-
-  // Upload directly to S3 using the presigned URL.
-  // The Content-Type must match the value used to sign the URL.
-  const uploadResponse = await fetch(uploadUrl, {
+  const s3Response = await fetch(uploadUrl, {
     method: 'PUT',
-    headers: {
-      'Content-Type': file.type,
-    },
+    headers: { 'Content-Type': contentType },
     body: file,
   });
 
-  if (!uploadResponse.ok) {
-    throw new Error(
-      `S3 upload failed (${uploadResponse.status}). Request a fresh upload URL and retry.`
-    );
+  if (!s3Response.ok) {
+    throw new Error(`S3 upload failed (${s3Response.status}).`);
   }
 
-  const extension = file.name.includes('.')
-    ? file.name.split('.').pop().toLowerCase()
-    : '';
-
-  const typeMap = {
-    pdf: 'pdf',
-    jpg: 'image',
-    jpeg: 'image',
-    png: 'image',
-    txt: 'doc',
-  };
-
-  const newFile = {
-    id: result.fileId,
-    fileKey: result.fileKey,
-    name: file.name,
-    type: typeMap[extension] || 'default',
-    size: file.size,
-    modified: new Date().toISOString(),
-    shared: false,
-    sharedWith: [],
-  };
-
-  // Keep the uploaded item visible during this browser session.
-  // The file listing itself is still mock data.
-  mockFiles = [newFile, ...mockFiles];
-
-  return newFile;
-}
-
-/**
- * Temporary mock file listing.
- * Not connected to DynamoDB or S3.
- */
-export async function getFiles() {
-  await delay();
-  return [...mockFiles];
-}
-
-/**
- * Temporary mock deletion.
- * Does not delete the actual S3 object.
- */
-export async function deleteFile(fileId) {
-  await delay(300);
-
-  mockFiles = mockFiles.filter(file => file.id !== fileId);
-
-  return { success: true };
-}
-
-/**
- * Temporary mock sharing.
- * Does not grant access to another AWS user.
- */
-export async function shareFile(fileId, email) {
-  await delay(400);
-
-  mockFiles = mockFiles.map(file => {
-    if (file.id !== fileId) {
-      return file;
-    }
-
-    const sharedWith = file.sharedWith || [];
-
-    return {
-      ...file,
-      shared: true,
-      sharedWith: sharedWith.includes(email)
-        ? sharedWith
-        : [...sharedWith, email],
-    };
+  // Metadata saving is a separate API call.
+  await apiRequest('/files/metadata', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileId,
+      fileKey,
+      fileName: file.name,
+      contentType,
+      fileSize: file.size,
+    }),
   });
 
-  return { success: true };
+  return normalizeFile({
+    fileId,
+    fileKey,
+    fileName: file.name,
+    contentType,
+    fileSize: file.size,
+    createdAt: new Date().toISOString(),
+  });
 }
 
 /**
- * Temporary placeholder download.
- * Downloads a text file, not the actual S3 object.
+ * List the authenticated user's files from the backend.
+ */
+export async function getFiles() {
+  const data = await apiRequest('/files');
+
+  if (!Array.isArray(data.files)) {
+    throw new Error('Unexpected file-list response: expected a files array.');
+  }
+
+  return data.files.map(normalizeFile);
+}
+
+/**
+ * Delete a file through the backend API.
+ */
+export async function deleteFile(fileId) {
+  if (!fileId) throw new Error('A file ID is required.');
+
+  return apiRequest(`/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Sharing is not supported by the currently provided backend endpoints.
+ */
+export async function shareFile() {
+  throw new Error('File sharing is not available in the backend yet.');
+}
+
+/**
+ * Get a presigned download URL and download the actual S3 file.
  */
 export async function downloadFile(fileId, fileName) {
-  await delay(200);
+  if (!fileId) throw new Error('A file ID is required.');
 
-  const blob = new Blob(
-    [
-      `CloudVault mock download: ${fileName}\nFile ID: ${fileId}`,
-    ],
-    { type: 'text/plain' }
+  const data = await apiRequest(
+    `/files/${encodeURIComponent(fileId)}/download-url`
   );
 
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  if (!data.downloadUrl) {
+    throw new Error('The download API did not return a download URL.');
+  }
 
-  link.href = url;
-  link.download = fileName;
+  const link = document.createElement('a');
+  link.href = data.downloadUrl;
+  link.download = data.fileName || fileName || 'download';
+  link.rel = 'noopener';
   document.body.appendChild(link);
   link.click();
   link.remove();
-
-  URL.revokeObjectURL(url);
 
   return { success: true };
 }

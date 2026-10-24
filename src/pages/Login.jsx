@@ -9,7 +9,7 @@ import {
   EyeOff,
   AlertCircle,
 } from 'lucide-react';
-import { login } from '../services/auth';
+import { login, isAuthenticated } from '../services/auth';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -32,8 +32,13 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(email.trim(), password);
-      navigate('/dashboard', { replace: true });
+  if (await isAuthenticated()) {
+    navigate('/dashboard', { replace: true });
+    return;
+  }
+
+  await login(email.trim(), password);
+  navigate('/dashboard', { replace: true });
     } catch (err) {
       const message = err?.message || '';
 
